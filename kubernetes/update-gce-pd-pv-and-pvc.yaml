@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    pv.kubernetes.io/bind-completed: "yes"
+    pv.kubernetes.io/bound-by-controller: "yes"
+    volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/gce-pd
+  finalizers:
+  - kubernetes.io/pvc-protection
+  name: ops-jenkins-pvc
+  namespace: ci
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50G
+  storageClassName: jenkins-ssd
+  volumeMode: Filesystem
+  volumeName: ops-jenkins
+  phx-api-customer-rollup-svcacct 
+
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  annotations:
+    pv.kubernetes.io/provisioned-by: kubernetes.io/gce-pd
+  finalizers:
+  - kubernetes.io/pv-protection
+  labels:
+    failure-domain.beta.kubernetes.io/region: us-east1
+    failure-domain.beta.kubernetes.io/zone: us-east1-b
+  name: ops-jenkins
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 50Gi
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: ops-jenkins-pvc
+    namespace: ci
+  gcePersistentDisk:
+    fsType: ext4
+    pdName: ops-jenkins
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: jenkins-ssd
+  volumeMode: Filesystem
