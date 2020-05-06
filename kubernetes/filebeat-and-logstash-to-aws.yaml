@@ -1,0 +1,275 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    k8s-app: logstash
+    task: logging
+  name: logging-logstash
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: logstash
+      task: logging
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        k8s-app: logstash
+        task: logging
+    spec:
+      containers:
+      - image: schikin/logstash:5.5
+        imagePullPolicy: Always
+        name: logstash
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /config
+          name: config
+        - mountPath: /pipeline
+          name: pipeline
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 101
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: logstash.yml
+            path: logstash.yml
+          name: logstash-config
+        name: config
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: pipeline.conf
+            path: pipeline.conf
+          name: logstash-config
+        name: pipeline
+
+---
+apiVersion: v1
+data:
+  logstash.yml: |-
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+  pipeline.conf: |-
+    input {
+        beats {
+            port => "5044"
+        }
+    }
+
+    output {
+      s3 {
+          access_key_id => "<AWS ACCESS ID. NEEDS READ/WRITE PERMS>"
+          secret_access_key => "<AWS SECRET KEY. NEEDS READ/WRITE PERMS>"
+          region => "<AWS BUCKET REGION>"
+          bucket => "<AWS BUCKET NAME>"
+          codec => "json_lines"
+          prefix => "%{+YYYY}/%{+MM}/%{+dd}"
+          encoding => "gzip"
+          size_file => 1000000
+          time_file => 15
+          canned_acl => "private"
+          storage_class => "STANDARD"
+      }
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    k8s-app: logstash
+    task: logging
+  name: logstash-config
+  namespace: kube-system
+
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  generation: 3
+  labels:
+    k8s-app: filebeat
+  name: filebeat
+  namespace: kube-system
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      k8s-app: filebeat
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        k8s-app: filebeat
+    spec:
+      containers:
+      - args:
+        - -c
+        - /etc/filebeat.yml
+        - -e
+        env:
+        - name: ELASTICSEARCH_HOST
+          value: logging-logstash.kube-system.svc.cluster.local
+        - name: ELASTICSEARCH_PORT
+          value: "5044"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        image: docker.elastic.co/beats/filebeat:7.6.1
+        imagePullPolicy: IfNotPresent
+        name: filebeat
+        resources:
+          limits:
+            memory: 200Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          runAsUser: 0
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/filebeat.yml
+          name: config
+          readOnly: true
+          subPath: filebeat.yml
+        - mountPath: /usr/share/filebeat/data
+          name: data
+        - mountPath: /var/lib/docker/containers
+          name: varlibdockercontainers
+          readOnly: true
+        - mountPath: /var/log
+          name: varlog
+          readOnly: true
+      dnsPolicy: ClusterFirstWithHostNet
+      hostNetwork: true
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: filebeat
+      serviceAccountName: filebeat
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 384
+          name: filebeat-config
+        name: config
+      - hostPath:
+          path: /var/lib/docker/containers
+          type: ""
+        name: varlibdockercontainers
+      - hostPath:
+          path: /var/log
+          type: ""
+        name: varlog
+      - hostPath:
+          path: /var/lib/filebeat-data
+          type: DirectoryOrCreate
+        name: data
+  templateGeneration: 3
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 1
+    type: RollingUpdate
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    kubernetes.io/name: logstash
+    task: logging
+  name: logging-logstash
+  namespace: kube-system
+spec:
+  ports:
+  - name: lumberjack
+    port: 5044
+    protocol: TCP
+    targetPort: 5044
+  selector:
+    k8s-app: logstash
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+data:
+  filebeat.yml: |-
+    filebeat.inputs:
+    - type: container
+      paths:
+        - /var/log/containers/*.log
+      processors:
+        - add_kubernetes_metadata:
+            host: ${NODE_NAME}
+            matchers:
+            - logs_path:
+                logs_path: "/var/log/containers/"
+
+    # To enable hints based autodiscover, remove `filebeat.inputs` configuration and uncomment this:
+    #filebeat.autodiscover:
+    #  providers:
+    #    - type: kubernetes
+    #      node: ${NODE_NAME}
+    #      hints.enabled: true
+    #      hints.default_config:
+    #        type: container
+    #        paths:
+    #          - /var/log/containers/*${data.kubernetes.container.id}.log
+
+    processors:
+      - add_cloud_metadata:
+      - add_host_metadata:
+
+    output.logstash:
+      hosts: ['${ELASTICSEARCH_HOST:logging-logstash}:${ELASTICSEARCH_PORT:5044}']
+kind: ConfigMap
+metadata:
+  labels:
+    k8s-app: filebeat
+  name: filebeat-config
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: filebeat
+subjects:
+- kind: ServiceAccount
+  name: filebeat
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: filebeat
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: filebeat
+  labels:
+    k8s-app: filebeat
+rules:
+- apiGroups: [""] # "" indicates the core API group
+  resources:
+  - namespaces
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
