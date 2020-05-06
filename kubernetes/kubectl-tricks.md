@@ -9,3 +9,6 @@
 
 # Delete all evicted pods
 `kubectl get pod | grep Evicted | awk '{print $1}' | xargs kubectl delete pod `
+
+# Decode certain field from secret
+`kubectl get secret datadog-integration-files -n monitoring -o json | jq -r '.data."http_check.yaml"' | base64 --decode`
