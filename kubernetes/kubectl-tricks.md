@@ -12,3 +12,6 @@
 
 # Decode certain field from secret
 `kubectl get secret datadog-integration-files -n monitoring -o json | jq -r '.data."http_check.yaml"' | base64 --decode`
+
+# Get cert from secret
+`kubectl get secret svc-golf-ing-certs -o json | jq -r '.data."tls.crt"' | base64 --decode | openssl x509 -text -noout`
