@@ -5,4 +5,4 @@ In the Google Cloud Console UI, using the project that the disk exists in
 
 On the Command Line:
 * `gcloud config set project [PROJECT YOU WANT TO CREATE THE DISK IN]`
-* `gcloud compute disks create [NAME OF DISK] --source-snapshot=https://www.googleapis.com/compute/v1/[PASTE selfLink HERE] --type=pd-sd --size=[SIZE] --zone [REGION --project=[PROJECT]`
+* `gcloud compute disks create [NAME OF DISK] --source-snapshot=https://www.googleapis.com/compute/v1/[PASTE selfLink HERE] --type=pd-ssd --size=[SIZE] --zone [REGION --project=[PROJECT]`
