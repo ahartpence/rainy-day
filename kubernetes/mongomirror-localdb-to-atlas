@@ -1,0 +1,13 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: <name>
+  namespace: data
+spec:
+  template:
+    spec:
+      containers:
+      - command: ["/mongomirror/bin/mongomirror", "--host=<replica_set_name>/<set_member_1:port>,<set_member_2:port>,<set_member_3:port>", "--destination=<atlas_rs_name>/<atlas_hosts_go_here:port>", "--destinationUsername=<atlas_username>", "--destinationPassword=<atlas_password>", "--username=<local_db_username>", "--password=<local_db_password>", "--authenticationDatabase=admin", "-vvv"]
+        image: gcr.io/kenna-1201/mongomirror:latest
+        name: mongomirror
+      restartPolicy: Never
