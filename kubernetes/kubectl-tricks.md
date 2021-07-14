@@ -26,3 +26,6 @@
 ``for i in `kubectl get node | grep dedicated | awk '{print $1}'`; do kubectl taint node $i kenna.io/data-dedicated=true:NoSchedule-; done``
 
 ``for i in `kubectl get node | grep dedicated | awk '{print $1}'`; do kubectl taint node $i kenna.io/data-dedicated-size=small:NoSchedule-; done``
+
+# Suspend a cronjob
+`k patch cj gn-api-dewey-restart-customer-pods -p '{"spec": {"suspend":true}}'`
